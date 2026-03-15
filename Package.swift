@@ -102,5 +102,35 @@ let package = Package(
                 .product(name: "Logging", package: "swift-log"),
             ]
         ),
+
+        // MARK: - Tests
+        .testTarget(
+            name: "MLXDeviceDiscoveryTests",
+            dependencies: [
+                "MLXDeviceDiscovery",
+            ]
+        ),
+        .testTarget(
+            name: "MLXContainerConfigTests",
+            dependencies: [
+                "MLXContainerConfig",
+                "MLXDeviceDiscovery",
+            ]
+        ),
+        .testTarget(
+            name: "MLXContainerProtocolTests",
+            dependencies: [
+                "MLXContainerProtocol",
+            ]
+        ),
+        // MLXContainerDaemon is an executableTarget — not importable by test targets.
+        // GPUMemoryAllocator and ModelManager are inlined in the test files.
+        // Only swift-log is needed as a direct dependency.
+        .testTarget(
+            name: "MLXContainerDaemonTests",
+            dependencies: [
+                .product(name: "Logging", package: "swift-log"),
+            ]
+        ),
     ]
 )

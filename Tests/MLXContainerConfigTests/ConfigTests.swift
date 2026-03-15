@@ -1,67 +1,59 @@
-import Testing
+import XCTest
 import Foundation
 @testable import MLXContainerConfig
 @testable import MLXDeviceDiscovery
 
-@Suite("ToolkitConfiguration Tests")
-struct ToolkitConfigurationTests {
+// MARK: - ToolkitConfiguration Tests
+
+final class ToolkitConfigurationTests: XCTestCase {
 
     // MARK: - Default values
 
-    @Test("ToolkitConfiguration default vsockPort is 2048")
-    func defaultVsockPort() {
+    func testDefaultVsockPort() {
         let config = ToolkitConfiguration()
-        #expect(config.vsockPort == 2048)
-        #expect(ToolkitConfiguration.defaultVsockPort == 2048)
+        XCTAssertEqual(config.vsockPort, 2048)
+        XCTAssertEqual(ToolkitConfiguration.defaultVsockPort, 2048)
     }
 
-    @Test("ToolkitConfiguration default modelsDirectory is the expected path")
-    func defaultModelsDirectory() {
+    func testDefaultModelsDirectory() {
         let config = ToolkitConfiguration()
-        #expect(config.modelsDirectory == "~/.mlx-container/models")
-        #expect(ToolkitConfiguration.defaultModelsDirectory == "~/.mlx-container/models")
+        XCTAssertEqual(config.modelsDirectory, "~/.mlx-container/models")
+        XCTAssertEqual(ToolkitConfiguration.defaultModelsDirectory, "~/.mlx-container/models")
     }
 
-    @Test("ToolkitConfiguration default maxGPUMemoryBytes is 0 (unlimited)")
-    func defaultMaxGPUMemoryBytes() {
+    func testDefaultMaxGPUMemoryBytes() {
         let config = ToolkitConfiguration()
-        #expect(config.maxGPUMemoryBytes == 0)
+        XCTAssertEqual(config.maxGPUMemoryBytes, 0)
     }
 
-    @Test("ToolkitConfiguration default maxLoadedModels is 3")
-    func defaultMaxLoadedModels() {
+    func testDefaultMaxLoadedModels() {
         let config = ToolkitConfiguration()
-        #expect(config.maxLoadedModels == 3)
+        XCTAssertEqual(config.maxLoadedModels, 3)
     }
 
-    @Test("ToolkitConfiguration default logLevel is info")
-    func defaultLogLevel() {
+    func testDefaultLogLevel() {
         let config = ToolkitConfiguration()
-        #expect(config.logLevel == "info")
+        XCTAssertEqual(config.logLevel, "info")
     }
 
-    @Test("ToolkitConfiguration default enableStreaming is true")
-    func defaultEnableStreaming() {
+    func testDefaultEnableStreaming() {
         let config = ToolkitConfiguration()
-        #expect(config.enableStreaming == true)
+        XCTAssertEqual(config.enableStreaming, true)
     }
 
-    @Test("ToolkitConfiguration default defaultMaxTokens is 512")
-    func defaultMaxTokens() {
+    func testDefaultMaxTokens() {
         let config = ToolkitConfiguration()
-        #expect(config.defaultMaxTokens == 512)
+        XCTAssertEqual(config.defaultMaxTokens, 512)
     }
 
-    @Test("ToolkitConfiguration default defaultTemperature is 0.7")
-    func defaultTemperature() {
+    func testDefaultTemperature() {
         let config = ToolkitConfiguration()
-        #expect(abs(config.defaultTemperature - 0.7) < 0.001)
+        XCTAssertLessThan(abs(config.defaultTemperature - 0.7), 0.001)
     }
 
     // MARK: - Custom initialisation
 
-    @Test("ToolkitConfiguration custom init stores all provided values")
-    func customInit() {
+    func testCustomInit() {
         let config = ToolkitConfiguration(
             vsockPort: 9090,
             modelsDirectory: "/tmp/models",
@@ -72,46 +64,42 @@ struct ToolkitConfigurationTests {
             defaultMaxTokens: 1024,
             defaultTemperature: 0.3
         )
-        #expect(config.vsockPort == 9090)
-        #expect(config.modelsDirectory == "/tmp/models")
-        #expect(config.maxGPUMemoryBytes == 8_000_000_000)
-        #expect(config.maxLoadedModels == 5)
-        #expect(config.logLevel == "debug")
-        #expect(config.enableStreaming == false)
-        #expect(config.defaultMaxTokens == 1024)
-        #expect(abs(config.defaultTemperature - 0.3) < 0.001)
+        XCTAssertEqual(config.vsockPort, 9090)
+        XCTAssertEqual(config.modelsDirectory, "/tmp/models")
+        XCTAssertEqual(config.maxGPUMemoryBytes, 8_000_000_000)
+        XCTAssertEqual(config.maxLoadedModels, 5)
+        XCTAssertEqual(config.logLevel, "debug")
+        XCTAssertEqual(config.enableStreaming, false)
+        XCTAssertEqual(config.defaultMaxTokens, 1024)
+        XCTAssertLessThan(abs(config.defaultTemperature - 0.3), 0.001)
     }
 
     // MARK: - resolvedModelsDirectory tilde expansion
 
-    @Test("resolvedModelsDirectory expands tilde to home directory")
-    func resolvedModelsDirectoryExpandsTilde() {
+    func testResolvedModelsDirectoryExpandsTilde() {
         let config = ToolkitConfiguration()
         let resolved = config.resolvedModelsDirectory
         let home = NSString(string: "~").expandingTildeInPath
-        #expect(resolved.path.hasPrefix(home), "resolvedModelsDirectory should start with the home directory")
-        #expect(!resolved.path.contains("~"), "resolvedModelsDirectory must not contain a literal tilde")
+        XCTAssertTrue(resolved.path.hasPrefix(home), "resolvedModelsDirectory should start with the home directory")
+        XCTAssertFalse(resolved.path.contains("~"), "resolvedModelsDirectory must not contain a literal tilde")
     }
 
-    @Test("resolvedModelsDirectory with absolute path is returned as-is")
-    func resolvedModelsDirectoryAbsolutePath() {
+    func testResolvedModelsDirectoryAbsolutePath() {
         var config = ToolkitConfiguration()
         config.modelsDirectory = "/var/lib/mlx/models"
         let resolved = config.resolvedModelsDirectory
-        #expect(resolved.path == "/var/lib/mlx/models")
+        XCTAssertEqual(resolved.path, "/var/lib/mlx/models")
     }
 
-    @Test("resolvedModelsDirectory ends with the relative path after the home directory")
-    func resolvedModelsDirectoryPathSuffix() {
+    func testResolvedModelsDirectoryPathSuffix() {
         let config = ToolkitConfiguration()
         let resolved = config.resolvedModelsDirectory
-        #expect(resolved.path.hasSuffix(".mlx-container/models"))
+        XCTAssertTrue(resolved.path.hasSuffix(".mlx-container/models"))
     }
 
     // MARK: - Save / Load roundtrip
 
-    @Test("ToolkitConfiguration saves to and loads from a temp file with identical values")
-    func saveLoadRoundtrip() throws {
+    func testSaveLoadRoundtrip() throws {
         let tmpDir = FileManager.default.temporaryDirectory
         let configURL = tmpDir.appendingPathComponent("test-config-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: configURL) }
@@ -128,32 +116,30 @@ struct ToolkitConfigurationTests {
         )
 
         try original.save(to: configURL)
-        #expect(FileManager.default.fileExists(atPath: configURL.path), "Config file should exist after save")
+        XCTAssertTrue(FileManager.default.fileExists(atPath: configURL.path), "Config file should exist after save")
 
         let loaded = try ToolkitConfiguration.load(from: configURL)
 
-        #expect(loaded.vsockPort == original.vsockPort)
-        #expect(loaded.modelsDirectory == original.modelsDirectory)
-        #expect(loaded.maxGPUMemoryBytes == original.maxGPUMemoryBytes)
-        #expect(loaded.maxLoadedModels == original.maxLoadedModels)
-        #expect(loaded.logLevel == original.logLevel)
-        #expect(loaded.enableStreaming == original.enableStreaming)
-        #expect(loaded.defaultMaxTokens == original.defaultMaxTokens)
-        #expect(abs(loaded.defaultTemperature - original.defaultTemperature) < 0.001)
+        XCTAssertEqual(loaded.vsockPort, original.vsockPort)
+        XCTAssertEqual(loaded.modelsDirectory, original.modelsDirectory)
+        XCTAssertEqual(loaded.maxGPUMemoryBytes, original.maxGPUMemoryBytes)
+        XCTAssertEqual(loaded.maxLoadedModels, original.maxLoadedModels)
+        XCTAssertEqual(loaded.logLevel, original.logLevel)
+        XCTAssertEqual(loaded.enableStreaming, original.enableStreaming)
+        XCTAssertEqual(loaded.defaultMaxTokens, original.defaultMaxTokens)
+        XCTAssertLessThan(abs(loaded.defaultTemperature - original.defaultTemperature), 0.001)
     }
 
-    @Test("ToolkitConfiguration load returns defaults when file does not exist")
-    func loadNonExistentReturnsDefaults() throws {
+    func testLoadNonExistentReturnsDefaults() throws {
         let tmpURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("nonexistent-\(UUID().uuidString).json")
         let config = try ToolkitConfiguration.load(from: tmpURL)
-        #expect(config.vsockPort == ToolkitConfiguration.defaultVsockPort)
-        #expect(config.modelsDirectory == ToolkitConfiguration.defaultModelsDirectory)
-        #expect(config.maxLoadedModels == 3)
+        XCTAssertEqual(config.vsockPort, ToolkitConfiguration.defaultVsockPort)
+        XCTAssertEqual(config.modelsDirectory, ToolkitConfiguration.defaultModelsDirectory)
+        XCTAssertEqual(config.maxLoadedModels, 3)
     }
 
-    @Test("ToolkitConfiguration save produces valid JSON")
-    func savesValidJSON() throws {
+    func testSavesValidJSON() throws {
         let tmpURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("valid-json-\(UUID().uuidString).json")
         defer { try? FileManager.default.removeItem(at: tmpURL) }
@@ -163,11 +149,10 @@ struct ToolkitConfigurationTests {
 
         let data = try Data(contentsOf: tmpURL)
         let json = try JSONSerialization.jsonObject(with: data, options: [])
-        #expect(json is [String: Any], "Saved config must be a JSON object")
+        XCTAssertTrue(json is [String: Any], "Saved config must be a JSON object")
     }
 
-    @Test("ToolkitConfiguration save creates intermediate directories")
-    func saveCreatesIntermediateDirectories() throws {
+    func testSaveCreatesIntermediateDirectories() throws {
         let tmpDir = FileManager.default.temporaryDirectory
         let nestedURL = tmpDir
             .appendingPathComponent("nested-\(UUID().uuidString)")
@@ -180,89 +165,78 @@ struct ToolkitConfigurationTests {
 
         let config = ToolkitConfiguration()
         try config.save(to: nestedURL)
-        #expect(FileManager.default.fileExists(atPath: nestedURL.path))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: nestedURL.path))
     }
 }
 
-@Suite("ContainerGPUConfig Tests")
-struct ContainerGPUConfigTests {
+// MARK: - ContainerGPUConfig Tests
+
+final class ContainerGPUConfigTests: XCTestCase {
 
     // MARK: - Default values
 
-    @Test("ContainerGPUConfig default init has enabled = true")
-    func defaultEnabled() {
+    func testDefaultEnabled() {
         let config = ContainerGPUConfig()
-        #expect(config.enabled == true)
+        XCTAssertEqual(config.enabled, true)
     }
 
-    @Test("ContainerGPUConfig default memoryBudgetBytes is 0")
-    func defaultMemoryBudget() {
+    func testDefaultMemoryBudget() {
         let config = ContainerGPUConfig()
-        #expect(config.memoryBudgetBytes == 0)
+        XCTAssertEqual(config.memoryBudgetBytes, 0)
     }
 
-    @Test("ContainerGPUConfig default preloadModel is nil")
-    func defaultPreloadModel() {
+    func testDefaultPreloadModel() {
         let config = ContainerGPUConfig()
-        #expect(config.preloadModel == nil)
+        XCTAssertNil(config.preloadModel)
     }
 
-    @Test("ContainerGPUConfig default maxTokensPerRequest is 2048")
-    func defaultMaxTokensPerRequest() {
+    func testDefaultMaxTokensPerRequest() {
         let config = ContainerGPUConfig()
-        #expect(config.maxTokensPerRequest == 2048)
+        XCTAssertEqual(config.maxTokensPerRequest, 2048)
     }
 
-    @Test("ContainerGPUConfig default allowModelManagement is true")
-    func defaultAllowModelManagement() {
+    func testDefaultAllowModelManagement() {
         let config = ContainerGPUConfig()
-        #expect(config.allowModelManagement == true)
+        XCTAssertEqual(config.allowModelManagement, true)
     }
 
-    @Test("ContainerGPUConfig default containerID is nil")
-    func defaultContainerID() {
+    func testDefaultContainerID() {
         let config = ContainerGPUConfig()
-        #expect(config.containerID == nil)
+        XCTAssertNil(config.containerID)
     }
 
     // MARK: - .disabled static
 
-    @Test("ContainerGPUConfig.disabled has enabled = false")
-    func disabledHasEnabledFalse() {
+    func testDisabledHasEnabledFalse() {
         let disabled = ContainerGPUConfig.disabled
-        #expect(disabled.enabled == false)
+        XCTAssertEqual(disabled.enabled, false)
     }
 
-    @Test("ContainerGPUConfig.disabled has default memory budget of 0")
-    func disabledHasZeroMemoryBudget() {
+    func testDisabledHasZeroMemoryBudget() {
         let disabled = ContainerGPUConfig.disabled
-        #expect(disabled.memoryBudgetBytes == 0)
+        XCTAssertEqual(disabled.memoryBudgetBytes, 0)
     }
 
-    @Test("ContainerGPUConfig.disabled has nil preloadModel")
-    func disabledHasNilPreloadModel() {
+    func testDisabledHasNilPreloadModel() {
         let disabled = ContainerGPUConfig.disabled
-        #expect(disabled.preloadModel == nil)
+        XCTAssertNil(disabled.preloadModel)
     }
 
     // MARK: - Custom values
 
-    @Test("ContainerGPUConfig stores custom containerID")
-    func customContainerID() {
+    func testCustomContainerID() {
         let config = ContainerGPUConfig(containerID: "container-abc-123")
-        #expect(config.containerID == "container-abc-123")
+        XCTAssertEqual(config.containerID, "container-abc-123")
     }
 
-    @Test("ContainerGPUConfig stores preloadModel when provided")
-    func storesPreloadModel() {
+    func testStoresPreloadModel() {
         let config = ContainerGPUConfig(preloadModel: "mlx-community/Llama-3.2-1B-4bit")
-        #expect(config.preloadModel == "mlx-community/Llama-3.2-1B-4bit")
+        XCTAssertEqual(config.preloadModel, "mlx-community/Llama-3.2-1B-4bit")
     }
 
     // MARK: - Codable roundtrip
 
-    @Test("ContainerGPUConfig encodes and decodes via JSON without data loss")
-    func codableRoundtrip() throws {
+    func testCodableRoundtrip() throws {
         let original = ContainerGPUConfig(
             enabled: true,
             memoryBudgetBytes: 2_000_000_000,
@@ -275,18 +249,17 @@ struct ContainerGPUConfigTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(ContainerGPUConfig.self, from: data)
 
-        #expect(decoded.enabled == original.enabled)
-        #expect(decoded.memoryBudgetBytes == original.memoryBudgetBytes)
-        #expect(decoded.preloadModel == original.preloadModel)
-        #expect(decoded.maxTokensPerRequest == original.maxTokensPerRequest)
-        #expect(decoded.allowModelManagement == original.allowModelManagement)
-        #expect(decoded.containerID == original.containerID)
+        XCTAssertEqual(decoded.enabled, original.enabled)
+        XCTAssertEqual(decoded.memoryBudgetBytes, original.memoryBudgetBytes)
+        XCTAssertEqual(decoded.preloadModel, original.preloadModel)
+        XCTAssertEqual(decoded.maxTokensPerRequest, original.maxTokensPerRequest)
+        XCTAssertEqual(decoded.allowModelManagement, original.allowModelManagement)
+        XCTAssertEqual(decoded.containerID, original.containerID)
     }
 
-    @Test("ContainerGPUConfig.disabled Codable roundtrip preserves enabled=false")
-    func disabledCodableRoundtrip() throws {
+    func testDisabledCodableRoundtrip() throws {
         let data = try JSONEncoder().encode(ContainerGPUConfig.disabled)
         let decoded = try JSONDecoder().decode(ContainerGPUConfig.self, from: data)
-        #expect(decoded.enabled == false)
+        XCTAssertEqual(decoded.enabled, false)
     }
 }

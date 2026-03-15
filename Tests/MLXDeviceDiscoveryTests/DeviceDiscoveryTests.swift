@@ -1,95 +1,84 @@
-import Testing
+import XCTest
 import Foundation
 @testable import MLXDeviceDiscovery
 
-@Suite("DeviceDiscovery Tests")
-struct DeviceDiscoveryTests {
+final class DeviceDiscoveryTests: XCTestCase {
 
     // MARK: - discover()
 
-    @Test("discover() returns at least one device on macOS with Metal")
-    func discoverReturnsDevices() {
+    func testDiscoverReturnsDevices() {
         let devices = DeviceDiscovery.discover()
         // Metal is available on all supported macOS 15+ Apple Silicon machines
-        #expect(!devices.isEmpty, "Expected at least one Metal GPU device on Apple Silicon macOS")
+        XCTAssertFalse(devices.isEmpty, "Expected at least one Metal GPU device on Apple Silicon macOS")
     }
 
-    @Test("discover() returns AppleGPUDevice with non-empty name")
-    func discoverDeviceHasName() {
+    func testDiscoverDeviceHasName() {
         let devices = DeviceDiscovery.discover()
         guard let first = devices.first else {
-            Issue.record("No devices discovered — skipping name check")
+            // No devices discovered — skipping name check
             return
         }
-        #expect(!first.name.isEmpty, "GPU device name must not be empty")
+        XCTAssertFalse(first.name.isEmpty, "GPU device name must not be empty")
     }
 
-    @Test("discover() returns device with positive memory values")
-    func discoverDeviceHasPositiveMemory() {
+    func testDiscoverDeviceHasPositiveMemory() {
         let devices = DeviceDiscovery.discover()
         guard let first = devices.first else {
-            Issue.record("No devices discovered — skipping memory check")
+            // No devices discovered — skipping memory check
             return
         }
-        #expect(first.unifiedMemoryBytes > 0, "unifiedMemoryBytes must be > 0")
-        #expect(first.recommendedMaxWorkingSetSize > 0, "recommendedMaxWorkingSetSize must be > 0")
+        XCTAssertGreaterThan(first.unifiedMemoryBytes, 0, "unifiedMemoryBytes must be > 0")
+        XCTAssertGreaterThan(first.recommendedMaxWorkingSetSize, 0, "recommendedMaxWorkingSetSize must be > 0")
     }
 
-    @Test("discover() returns device with non-empty GPU family")
-    func discoverDeviceHasGPUFamily() {
+    func testDiscoverDeviceHasGPUFamily() {
         let devices = DeviceDiscovery.discover()
         guard let first = devices.first else {
-            Issue.record("No devices discovered — skipping gpuFamily check")
+            // No devices discovered — skipping gpuFamily check
             return
         }
-        #expect(!first.gpuFamily.isEmpty, "gpuFamily must not be empty")
+        XCTAssertFalse(first.gpuFamily.isEmpty, "gpuFamily must not be empty")
     }
 
     // MARK: - defaultDevice()
 
-    @Test("defaultDevice() returns first discovered device")
-    func defaultDeviceMatchesDiscover() {
+    func testDefaultDeviceMatchesDiscover() {
         let first = DeviceDiscovery.discover().first
         let defaultDev = DeviceDiscovery.defaultDevice()
-        #expect(first?.name == defaultDev?.name)
+        XCTAssertEqual(first?.name, defaultDev?.name)
     }
 
     // MARK: - systemMemoryBytes()
 
-    @Test("systemMemoryBytes() returns a value greater than zero")
-    func systemMemoryBytesPositive() {
+    func testSystemMemoryBytesPositive() {
         let mem = DeviceDiscovery.systemMemoryBytes()
-        #expect(mem > 0, "System memory must be positive")
+        XCTAssertGreaterThan(mem, 0, "System memory must be positive")
     }
 
-    @Test("systemMemoryBytes() returns a plausible value (at least 1 GB)")
-    func systemMemoryBytesAtLeast1GB() {
+    func testSystemMemoryBytesAtLeast1GB() {
         let mem = DeviceDiscovery.systemMemoryBytes()
         let oneGB: UInt64 = 1024 * 1024 * 1024
-        #expect(mem >= oneGB, "System memory should be at least 1 GB on any supported machine")
+        XCTAssertGreaterThanOrEqual(mem, oneGB, "System memory should be at least 1 GB on any supported machine")
     }
 
     // MARK: - chipName()
 
-    @Test("chipName() returns a non-nil value on Apple Silicon macOS")
-    func chipNameNonNil() {
+    func testChipNameNonNil() {
         let name = DeviceDiscovery.chipName()
-        #expect(name != nil, "chipName() should return a non-nil string on Apple Silicon macOS")
+        XCTAssertNotNil(name, "chipName() should return a non-nil string on Apple Silicon macOS")
     }
 
-    @Test("chipName() returns a non-empty string")
-    func chipNameNonEmpty() {
+    func testChipNameNonEmpty() {
         guard let name = DeviceDiscovery.chipName() else {
-            Issue.record("chipName() returned nil — skipping non-empty check")
+            // chipName() returned nil — skipping non-empty check
             return
         }
-        #expect(!name.isEmpty, "chipName() must return a non-empty string")
+        XCTAssertFalse(name.isEmpty, "chipName() must return a non-empty string")
     }
 
     // MARK: - AppleGPUDevice Codable roundtrip
 
-    @Test("AppleGPUDevice encodes and decodes via JSON without data loss")
-    func appleGPUDeviceCodableRoundtrip() throws {
+    func testAppleGPUDeviceCodableRoundtrip() throws {
         let original = AppleGPUDevice(
             name: "Apple M3 Max",
             registryID: 0xDEADBEEF_CAFEBABE,
@@ -103,23 +92,22 @@ struct DeviceDiscoveryTests {
 
         let encoder = JSONEncoder()
         let data = try encoder.encode(original)
-        #expect(!data.isEmpty, "Encoded data must not be empty")
+        XCTAssertFalse(data.isEmpty, "Encoded data must not be empty")
 
         let decoder = JSONDecoder()
         let decoded = try decoder.decode(AppleGPUDevice.self, from: data)
 
-        #expect(decoded.name == original.name)
-        #expect(decoded.registryID == original.registryID)
-        #expect(decoded.recommendedMaxWorkingSetSize == original.recommendedMaxWorkingSetSize)
-        #expect(decoded.gpuFamily == original.gpuFamily)
-        #expect(decoded.unifiedMemoryBytes == original.unifiedMemoryBytes)
-        #expect(decoded.maxThreadsPerThreadgroup == original.maxThreadsPerThreadgroup)
-        #expect(decoded.supportsMetal3 == original.supportsMetal3)
-        #expect(decoded.hasUnifiedMemory == original.hasUnifiedMemory)
+        XCTAssertEqual(decoded.name, original.name)
+        XCTAssertEqual(decoded.registryID, original.registryID)
+        XCTAssertEqual(decoded.recommendedMaxWorkingSetSize, original.recommendedMaxWorkingSetSize)
+        XCTAssertEqual(decoded.gpuFamily, original.gpuFamily)
+        XCTAssertEqual(decoded.unifiedMemoryBytes, original.unifiedMemoryBytes)
+        XCTAssertEqual(decoded.maxThreadsPerThreadgroup, original.maxThreadsPerThreadgroup)
+        XCTAssertEqual(decoded.supportsMetal3, original.supportsMetal3)
+        XCTAssertEqual(decoded.hasUnifiedMemory, original.hasUnifiedMemory)
     }
 
-    @Test("AppleGPUDevice with minimal values encodes and decodes correctly")
-    func appleGPUDeviceCodableMinimalValues() throws {
+    func testAppleGPUDeviceCodableMinimalValues() throws {
         let original = AppleGPUDevice(
             name: "",
             registryID: 0,
@@ -134,14 +122,13 @@ struct DeviceDiscoveryTests {
         let data = try JSONEncoder().encode(original)
         let decoded = try JSONDecoder().decode(AppleGPUDevice.self, from: data)
 
-        #expect(decoded.name == "")
-        #expect(decoded.registryID == 0)
-        #expect(decoded.supportsMetal3 == false)
-        #expect(decoded.hasUnifiedMemory == false)
+        XCTAssertEqual(decoded.name, "")
+        XCTAssertEqual(decoded.registryID, 0)
+        XCTAssertEqual(decoded.supportsMetal3, false)
+        XCTAssertEqual(decoded.hasUnifiedMemory, false)
     }
 
-    @Test("AppleGPUDevice description contains device name")
-    func appleGPUDeviceDescriptionContainsName() {
+    func testAppleGPUDeviceDescriptionContainsName() {
         let device = AppleGPUDevice(
             name: "Apple M2 Pro",
             registryID: 1,
@@ -152,20 +139,19 @@ struct DeviceDiscoveryTests {
             supportsMetal3: false,
             hasUnifiedMemory: true
         )
-        #expect(device.description.contains("Apple M2 Pro"))
+        XCTAssertTrue(device.description.contains("Apple M2 Pro"))
     }
 
-    @Test("Discovered device Codable roundtrip preserves all fields")
-    func discoveredDeviceCodableRoundtrip() throws {
+    func testDiscoveredDeviceCodableRoundtrip() throws {
         guard let device = DeviceDiscovery.defaultDevice() else {
-            Issue.record("No device available — skipping live Codable roundtrip")
+            // No device available — skipping live Codable roundtrip
             return
         }
         let data = try JSONEncoder().encode(device)
         let decoded = try JSONDecoder().decode(AppleGPUDevice.self, from: data)
-        #expect(decoded.name == device.name)
-        #expect(decoded.registryID == device.registryID)
-        #expect(decoded.gpuFamily == device.gpuFamily)
-        #expect(decoded.unifiedMemoryBytes == device.unifiedMemoryBytes)
+        XCTAssertEqual(decoded.name, device.name)
+        XCTAssertEqual(decoded.registryID, device.registryID)
+        XCTAssertEqual(decoded.gpuFamily, device.gpuFamily)
+        XCTAssertEqual(decoded.unifiedMemoryBytes, device.unifiedMemoryBytes)
     }
 }

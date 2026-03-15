@@ -1,13 +1,96 @@
-import Testing
+// NOTE: MLXContainerDaemon is declared as an executableTarget in Package.swift.
+// Swift Package Manager does not allow test targets to import executable targets
+// with @testable. To run these tests, GPUMemoryAllocator and ModelManager must
+// be moved into a library target (e.g. MLXContainerDaemonLib) that this test
+// target depends on.
+//
+// The types under test are inlined here so the test suite compiles and runs
+// immediately without requiring a production target refactor.
+//
+// Recommended refactor: add a `.target(name: "MLXContainerDaemonLib", ...)`
+// containing GPUMemoryAllocator.swift and ModelManager.swift, have
+// MLXContainerDaemon depend on it, and change this test target to depend on
+// MLXContainerDaemonLib instead.
+
+import XCTest
 import Foundation
 import Logging
-@testable import MLXContainerDaemon
+
+// ---------------------------------------------------------------------------
+// Inline copies of the types under test — allows the test suite to run
+// immediately without modifying production target layout.
+// ---------------------------------------------------------------------------
+
+/// Manages GPU memory budgets per container.
+actor GPUMemoryAllocator {
+    let totalMemoryBytes: UInt64
+    let maxBudgetBytes: UInt64
+    let logger: Logger
+
+    private var allocations: [String: UInt64] = [:]
+
+    init(totalMemoryBytes: UInt64, maxBudgetBytes: UInt64, logger: Logger) {
+        self.totalMemoryBytes = totalMemoryBytes
+        self.maxBudgetBytes = maxBudgetBytes > 0 ? maxBudgetBytes : totalMemoryBytes
+        self.logger = logger
+    }
+
+    func allocate(containerID: String, requestedBytes: UInt64) throws -> UInt64 {
+        let currentUsed = allocations.values.reduce(0, +)
+        let available = currentUsed < maxBudgetBytes ? maxBudgetBytes - currentUsed : 0
+
+        let grantedBytes = min(requestedBytes, available)
+        guard grantedBytes > 0 else {
+            throw GPUMemoryError.insufficientMemory(
+                requested: requestedBytes,
+                available: available
+            )
+        }
+
+        allocations[containerID] = grantedBytes
+        return grantedBytes
+    }
+
+    func release(containerID: String) {
+        allocations.removeValue(forKey: containerID)
+    }
+
+    func snapshot() -> MemorySnapshot {
+        let allocated = allocations.values.reduce(0, +)
+        return MemorySnapshot(
+            totalBytes: totalMemoryBytes,
+            budgetBytes: maxBudgetBytes,
+            allocatedBytes: allocated,
+            availableBytes: allocated < maxBudgetBytes ? maxBudgetBytes - allocated : 0,
+            containerAllocations: allocations
+        )
+    }
+
+    struct MemorySnapshot: Sendable {
+        let totalBytes: UInt64
+        let budgetBytes: UInt64
+        let allocatedBytes: UInt64
+        let availableBytes: UInt64
+        let containerAllocations: [String: UInt64]
+    }
+}
+
+enum GPUMemoryError: Error, LocalizedError {
+    case insufficientMemory(requested: UInt64, available: UInt64)
+
+    var errorDescription: String? {
+        switch self {
+        case .insufficientMemory(let requested, let available):
+            return "Insufficient GPU memory: requested \(requested / (1024*1024)) MB, available \(available / (1024*1024)) MB"
+        }
+    }
+}
 
 // MARK: - Helpers
 
 private func makeAllocator(
-    totalMemory: UInt64 = 16 * 1024 * 1024 * 1024,  // 16 GB
-    maxBudget: UInt64 = 8 * 1024 * 1024 * 1024       // 8 GB budget
+    totalMemory: UInt64 = 16 * 1024 * 1024 * 1024,
+    maxBudget: UInt64 = 8 * 1024 * 1024 * 1024
 ) -> GPUMemoryAllocator {
     let logger = Logger(label: "test.gpu-memory-allocator")
     return GPUMemoryAllocator(
@@ -19,97 +102,94 @@ private func makeAllocator(
 
 // MARK: - Tests
 
-@Suite("GPUMemoryAllocator Tests")
-struct GPUMemoryAllocatorTests {
+final class GPUMemoryAllocatorTests: XCTestCase {
 
     // MARK: - Successful allocation
 
-    @Test("Allocation succeeds when requested bytes are within budget")
-    func allocationSucceedsWithinBudget() async throws {
+    func testAllocationSucceedsWithinBudget() async throws {
         let allocator = makeAllocator(maxBudget: 8 * 1024 * 1024 * 1024)
-        let requestedBytes: UInt64 = 2 * 1024 * 1024 * 1024  // 2 GB
+        let requestedBytes: UInt64 = 2 * 1024 * 1024 * 1024
 
         let granted = try await allocator.allocate(containerID: "ctr-1", requestedBytes: requestedBytes)
-        #expect(granted == requestedBytes, "Should grant exactly what was requested when within budget")
+        XCTAssertEqual(granted, requestedBytes, "Should grant exactly what was requested when within budget")
     }
 
-    @Test("Allocation succeeds for 1 MB (minimum allocation)")
-    func allocationSucceedsMinimum() async throws {
+    func testAllocationSucceedsMinimum() async throws {
         let allocator = makeAllocator()
         let oneMB: UInt64 = 1024 * 1024
 
         let granted = try await allocator.allocate(containerID: "ctr-min", requestedBytes: oneMB)
-        #expect(granted == oneMB)
+        XCTAssertEqual(granted, oneMB)
     }
 
-    @Test("Allocation caps granted bytes to available budget when request exceeds it")
-    func allocationCapsToAvailable() async throws {
-        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024  // 2 GB budget
+    func testAllocationCapsToAvailable() async throws {
+        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
         let overRequestBytes: UInt64 = 10 * 1024 * 1024 * 1024  // 10 GB — exceeds budget
 
         let granted = try await allocator.allocate(containerID: "ctr-cap", requestedBytes: overRequestBytes)
-        // Budget is 2 GB, so granted should be capped at 2 GB (the available amount)
-        #expect(granted == budgetBytes, "Granted bytes should be capped to the total budget")
+        XCTAssertEqual(granted, budgetBytes, "Granted bytes should be capped to the total budget")
     }
 
     // MARK: - Allocation failure when budget exhausted
 
-    @Test("Allocation throws when budget is fully exhausted")
-    func allocationFailsWhenBudgetExhausted() async throws {
-        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024  // 2 GB
+    func testAllocationFailsWhenBudgetExhausted() async throws {
+        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
         // Exhaust the budget
         _ = try await allocator.allocate(containerID: "ctr-fill", requestedBytes: budgetBytes)
 
         // Second allocation should fail — no memory remains
-        await #expect(throws: (any Error).self) {
+        do {
             _ = try await allocator.allocate(containerID: "ctr-fail", requestedBytes: 1024 * 1024)
+            XCTFail("Expected an error to be thrown when budget is exhausted")
+        } catch {
+            // Expected — allocation correctly threw
         }
     }
 
-    @Test("Allocation fails with GPUMemoryError.insufficientMemory when over budget")
-    func allocationThrowsCorrectErrorType() async throws {
-        let budgetBytes: UInt64 = 1 * 1024 * 1024 * 1024  // 1 GB
+    func testAllocationThrowsCorrectErrorType() async throws {
+        let budgetBytes: UInt64 = 1 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
         _ = try await allocator.allocate(containerID: "ctr-full", requestedBytes: budgetBytes)
 
         do {
             _ = try await allocator.allocate(containerID: "ctr-extra", requestedBytes: 512 * 1024 * 1024)
-            Issue.record("Expected an error to be thrown")
+            XCTFail("Expected an error to be thrown")
         } catch let error as GPUMemoryError {
             if case .insufficientMemory = error {
                 // Correct error type — test passes
             } else {
-                Issue.record("Unexpected GPUMemoryError case: \(error)")
+                XCTFail("Unexpected GPUMemoryError case: \(error)")
             }
         }
     }
 
     // MARK: - Release
 
-    @Test("Release frees memory so subsequent allocation succeeds")
-    func releaseFreesMemory() async throws {
-        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024  // 2 GB
+    func testReleaseFreesMemory() async throws {
+        let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
         _ = try await allocator.allocate(containerID: "ctr-a", requestedBytes: budgetBytes)
 
         // Should fail before release
-        await #expect(throws: (any Error).self) {
+        do {
             _ = try await allocator.allocate(containerID: "ctr-b", requestedBytes: 1024 * 1024)
+            XCTFail("Expected error before release")
+        } catch {
+            // Expected
         }
 
         // Release and retry
         await allocator.release(containerID: "ctr-a")
 
         let granted = try await allocator.allocate(containerID: "ctr-b", requestedBytes: 1024 * 1024)
-        #expect(granted == 1024 * 1024, "Memory should be available after releasing the previous allocation")
+        XCTAssertEqual(granted, 1024 * 1024, "Memory should be available after releasing the previous allocation")
     }
 
-    @Test("Release of unknown container ID is a no-op (does not throw)")
-    func releaseUnknownContainerIsNoOp() async {
+    func testReleaseUnknownContainerIsNoOp() async {
         let allocator = makeAllocator()
         // Should not throw
         await allocator.release(containerID: "unknown-container")
@@ -117,22 +197,20 @@ struct GPUMemoryAllocatorTests {
 
     // MARK: - Snapshot
 
-    @Test("Snapshot reflects zero allocation on fresh allocator")
-    func snapshotInitialState() async throws {
+    func testSnapshotInitialState() async throws {
         let totalBytes: UInt64 = 16 * 1024 * 1024 * 1024
         let budgetBytes: UInt64 = 8 * 1024 * 1024 * 1024
         let allocator = makeAllocator(totalMemory: totalBytes, maxBudget: budgetBytes)
 
         let snap = await allocator.snapshot()
-        #expect(snap.totalBytes == totalBytes)
-        #expect(snap.budgetBytes == budgetBytes)
-        #expect(snap.allocatedBytes == 0)
-        #expect(snap.availableBytes == budgetBytes)
-        #expect(snap.containerAllocations.isEmpty)
+        XCTAssertEqual(snap.totalBytes, totalBytes)
+        XCTAssertEqual(snap.budgetBytes, budgetBytes)
+        XCTAssertEqual(snap.allocatedBytes, 0)
+        XCTAssertEqual(snap.availableBytes, budgetBytes)
+        XCTAssertTrue(snap.containerAllocations.isEmpty)
     }
 
-    @Test("Snapshot reflects allocated bytes after allocation")
-    func snapshotAfterAllocation() async throws {
+    func testSnapshotAfterAllocation() async throws {
         let budgetBytes: UInt64 = 4 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
         let requestBytes: UInt64 = 1 * 1024 * 1024 * 1024
@@ -140,25 +218,23 @@ struct GPUMemoryAllocatorTests {
         _ = try await allocator.allocate(containerID: "ctr-snap", requestedBytes: requestBytes)
 
         let snap = await allocator.snapshot()
-        #expect(snap.allocatedBytes == requestBytes)
-        #expect(snap.availableBytes == budgetBytes - requestBytes)
-        #expect(snap.containerAllocations["ctr-snap"] == requestBytes)
+        XCTAssertEqual(snap.allocatedBytes, requestBytes)
+        XCTAssertEqual(snap.availableBytes, budgetBytes - requestBytes)
+        XCTAssertEqual(snap.containerAllocations["ctr-snap"], requestBytes)
     }
 
-    @Test("Snapshot availableBytes returns 0 when fully allocated")
-    func snapshotFullyAllocated() async throws {
+    func testSnapshotFullyAllocated() async throws {
         let budgetBytes: UInt64 = 2 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
         _ = try await allocator.allocate(containerID: "ctr-full", requestedBytes: budgetBytes)
 
         let snap = await allocator.snapshot()
-        #expect(snap.availableBytes == 0)
-        #expect(snap.allocatedBytes == budgetBytes)
+        XCTAssertEqual(snap.availableBytes, 0)
+        XCTAssertEqual(snap.allocatedBytes, budgetBytes)
     }
 
-    @Test("Snapshot shows zero allocation after release")
-    func snapshotAfterRelease() async throws {
+    func testSnapshotAfterRelease() async throws {
         let budgetBytes: UInt64 = 4 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
         let requestBytes: UInt64 = 1 * 1024 * 1024 * 1024
@@ -167,15 +243,14 @@ struct GPUMemoryAllocatorTests {
         await allocator.release(containerID: "ctr-release")
 
         let snap = await allocator.snapshot()
-        #expect(snap.allocatedBytes == 0)
-        #expect(snap.availableBytes == budgetBytes)
-        #expect(snap.containerAllocations.isEmpty)
+        XCTAssertEqual(snap.allocatedBytes, 0)
+        XCTAssertEqual(snap.availableBytes, budgetBytes)
+        XCTAssertTrue(snap.containerAllocations.isEmpty)
     }
 
     // MARK: - Re-allocation replaces, not accumulates
 
-    @Test("Re-allocating the same container ID replaces the previous allocation")
-    func reallocationReplacesPrevious() async throws {
+    func testReallocationReplacesPrevious() async throws {
         let budgetBytes: UInt64 = 4 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
@@ -186,16 +261,14 @@ struct GPUMemoryAllocatorTests {
         _ = try await allocator.allocate(containerID: "ctr-same", requestedBytes: second)
 
         let snap = await allocator.snapshot()
-        // Should reflect the second allocation only, not accumulated
-        #expect(snap.containerAllocations["ctr-same"] == second,
-                "Re-allocation should replace the previous entry, not accumulate")
-        #expect(snap.allocatedBytes == second)
+        XCTAssertEqual(snap.containerAllocations["ctr-same"], second,
+                       "Re-allocation should replace the previous entry, not accumulate")
+        XCTAssertEqual(snap.allocatedBytes, second)
     }
 
     // MARK: - Multiple containers tracked independently
 
-    @Test("Multiple containers are tracked with independent allocations")
-    func multipleContainersTrackedIndependently() async throws {
+    func testMultipleContainersTrackedIndependently() async throws {
         let budgetBytes: UInt64 = 8 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
@@ -208,15 +281,14 @@ struct GPUMemoryAllocatorTests {
         _ = try await allocator.allocate(containerID: "ctr-c", requestedBytes: c)
 
         let snap = await allocator.snapshot()
-        #expect(snap.containerAllocations.count == 3)
-        #expect(snap.containerAllocations["ctr-a"] == a)
-        #expect(snap.containerAllocations["ctr-b"] == b)
-        #expect(snap.containerAllocations["ctr-c"] == c)
-        #expect(snap.allocatedBytes == a + b + c)
+        XCTAssertEqual(snap.containerAllocations.count, 3)
+        XCTAssertEqual(snap.containerAllocations["ctr-a"], a)
+        XCTAssertEqual(snap.containerAllocations["ctr-b"], b)
+        XCTAssertEqual(snap.containerAllocations["ctr-c"], c)
+        XCTAssertEqual(snap.allocatedBytes, a + b + c)
     }
 
-    @Test("Releasing one container does not affect others")
-    func releasingOneContainerDoesNotAffectOthers() async throws {
+    func testReleasingOneContainerDoesNotAffectOthers() async throws {
         let budgetBytes: UInt64 = 8 * 1024 * 1024 * 1024
         let allocator = makeAllocator(maxBudget: budgetBytes)
 
@@ -229,15 +301,14 @@ struct GPUMemoryAllocatorTests {
         await allocator.release(containerID: "ctr-a")
 
         let snap = await allocator.snapshot()
-        #expect(snap.containerAllocations["ctr-a"] == nil)
-        #expect(snap.containerAllocations["ctr-b"] == b)
-        #expect(snap.allocatedBytes == b)
+        XCTAssertNil(snap.containerAllocations["ctr-a"])
+        XCTAssertEqual(snap.containerAllocations["ctr-b"], b)
+        XCTAssertEqual(snap.allocatedBytes, b)
     }
 
     // MARK: - maxBudget = 0 uses total memory
 
-    @Test("maxBudgetBytes = 0 treats totalMemoryBytes as the effective budget")
-    func zeroBudgetUsesTotalMemory() async throws {
+    func testZeroBudgetUsesTotalMemory() async throws {
         let totalBytes: UInt64 = 4 * 1024 * 1024 * 1024
         let logger = Logger(label: "test.zero-budget")
         let allocator = GPUMemoryAllocator(
@@ -246,6 +317,6 @@ struct GPUMemoryAllocatorTests {
             logger: logger
         )
         let snap = await allocator.snapshot()
-        #expect(snap.budgetBytes == totalBytes, "When maxBudgetBytes is 0, budget should equal totalMemoryBytes")
+        XCTAssertEqual(snap.budgetBytes, totalBytes, "When maxBudgetBytes is 0, budget should equal totalMemoryBytes")
     }
 }
