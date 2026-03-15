@@ -1,5 +1,9 @@
 import Foundation
 
+// All request message types use custom Decodable to tolerate missing fields
+// (clients may omit optional fields). Response types use standard Codable since
+// the server always sends complete payloads.
+
 // MARK: - Model Management Messages
 
 public struct MLXContainer_LoadModelRequest: Sendable, Codable {
@@ -11,6 +15,13 @@ public struct MLXContainer_LoadModelRequest: Sendable, Codable {
         self.modelID = modelID
         self.alias = alias
         self.memoryBudgetBytes = memoryBudgetBytes
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? ""
+        alias = try c.decodeIfPresent(String.self, forKey: .alias) ?? ""
+        memoryBudgetBytes = try c.decodeIfPresent(UInt64.self, forKey: .memoryBudgetBytes) ?? 0
     }
 }
 
@@ -33,7 +44,13 @@ public struct MLXContainer_LoadModelResponse: Sendable, Codable {
 
 public struct MLXContainer_UnloadModelRequest: Sendable, Codable {
     public var modelID: String
+
     public init(modelID: String = "") { self.modelID = modelID }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? ""
+    }
 }
 
 public struct MLXContainer_UnloadModelResponse: Sendable, Codable {
@@ -50,6 +67,7 @@ public struct MLXContainer_UnloadModelResponse: Sendable, Codable {
 
 public struct MLXContainer_ListModelsRequest: Sendable, Codable {
     public init() {}
+    public init(from decoder: Decoder) throws {}
 }
 
 public struct MLXContainer_ListModelsResponse: Sendable, Codable {
@@ -79,9 +97,16 @@ public struct MLXContainer_ModelInfo: Sendable, Codable {
 public struct MLXContainer_ChatMessage: Sendable, Codable {
     public var role: String
     public var content: String
+
     public init(role: String = "", content: String = "") {
         self.role = role
         self.content = content
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        role = try c.decodeIfPresent(String.self, forKey: .role) ?? ""
+        content = try c.decodeIfPresent(String.self, forKey: .content) ?? ""
     }
 }
 
@@ -100,6 +125,15 @@ public struct MLXContainer_GenerateParameters: Sendable, Codable {
         self.repetitionPenalty = repetitionPenalty
         self.repetitionContextSize = repetitionContextSize
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        maxTokens = try c.decodeIfPresent(Int32.self, forKey: .maxTokens) ?? 0
+        temperature = try c.decodeIfPresent(Float.self, forKey: .temperature) ?? 0
+        topP = try c.decodeIfPresent(Float.self, forKey: .topP) ?? 0
+        repetitionPenalty = try c.decodeIfPresent(Float.self, forKey: .repetitionPenalty) ?? 0
+        repetitionContextSize = try c.decodeIfPresent(Int32.self, forKey: .repetitionContextSize) ?? 0
+    }
 }
 
 public struct MLXContainer_GenerateRequest: Sendable, Codable {
@@ -116,6 +150,15 @@ public struct MLXContainer_GenerateRequest: Sendable, Codable {
         self.messages = messages
         self.parameters = parameters
         self.containerID = containerID
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? ""
+        prompt = try c.decodeIfPresent(String.self, forKey: .prompt) ?? ""
+        messages = try c.decodeIfPresent([MLXContainer_ChatMessage].self, forKey: .messages) ?? []
+        parameters = try c.decodeIfPresent(MLXContainer_GenerateParameters.self, forKey: .parameters) ?? .init()
+        containerID = try c.decodeIfPresent(String.self, forKey: .containerID) ?? ""
     }
 }
 
@@ -157,6 +200,13 @@ public struct MLXContainer_EmbedRequest: Sendable, Codable {
         self.texts = texts
         self.containerID = containerID
     }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        modelID = try c.decodeIfPresent(String.self, forKey: .modelID) ?? ""
+        texts = try c.decodeIfPresent([String].self, forKey: .texts) ?? []
+        containerID = try c.decodeIfPresent(String.self, forKey: .containerID) ?? ""
+    }
 }
 
 public struct MLXContainer_Embedding: Sendable, Codable {
@@ -178,6 +228,7 @@ public struct MLXContainer_EmbedResponse: Sendable, Codable {
 
 public struct MLXContainer_GetGPUStatusRequest: Sendable, Codable {
     public init() {}
+    public init(from decoder: Decoder) throws {}
 }
 
 public struct MLXContainer_GetGPUStatusResponse: Sendable, Codable {
@@ -204,6 +255,7 @@ public struct MLXContainer_GetGPUStatusResponse: Sendable, Codable {
 
 public struct MLXContainer_PingRequest: Sendable, Codable {
     public init() {}
+    public init(from decoder: Decoder) throws {}
 }
 
 public struct MLXContainer_PingResponse: Sendable, Codable {
