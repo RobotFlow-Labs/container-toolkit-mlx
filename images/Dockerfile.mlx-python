@@ -1,0 +1,43 @@
+FROM ubuntu:24.04
+
+LABEL maintainer="AIFLOW LABS <ilessio@aiflowlabs.io>"
+LABEL description="Python dev image for MLX Container Toolkit with common ML dependencies"
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    python3-dev \
+    build-essential \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment
+RUN python3 -m venv /opt/mlx-container
+ENV PATH="/opt/mlx-container/bin:$PATH"
+
+# Install the mlx-container client package
+COPY client/ /tmp/mlx-container-client/
+RUN pip install --no-cache-dir /tmp/mlx-container-client/ && \
+    rm -rf /tmp/mlx-container-client/
+
+# Install common ML/AI dependencies (these run on CPU in the container,
+# but GPU inference is proxied to host via mlx-container)
+RUN pip install --no-cache-dir \
+    numpy \
+    scipy \
+    pandas \
+    fastapi \
+    uvicorn \
+    httpx \
+    pydantic
+
+# Set environment variables for vsock connection
+ENV MLX_VSOCK_CID=2
+ENV MLX_VSOCK_PORT=2048
+
+WORKDIR /app
+
+CMD ["python3"]

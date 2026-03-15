@@ -1,0 +1,27 @@
+.claude/settings.local.json
+.env
+.env.*
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+dist/
+build/
+.DS_Store
+
+# Swift
+.build/
+.swiftpm/
+Package.resolved
+*.xcodeproj/
+*.xcworkspace/
+DerivedData/
+
+# Cloned reference repos
+repositories/
+apple-container/
+apple-containerization/
+nvidia-container-toolkit/
+
+# Claude settings
+.claude/settings.json

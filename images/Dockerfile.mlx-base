@@ -1,0 +1,26 @@
+FROM ubuntu:24.04
+
+LABEL maintainer="AIFLOW LABS <ilessio@aiflowlabs.io>"
+LABEL description="Base image for MLX Container Toolkit — GPU-accelerated inference in Linux containers on Apple Silicon"
+
+# Install Python and system dependencies
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3 \
+    python3-pip \
+    python3-venv \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a virtual environment
+RUN python3 -m venv /opt/mlx-container
+ENV PATH="/opt/mlx-container/bin:$PATH"
+
+# Install the mlx-container client package
+COPY client/ /tmp/mlx-container-client/
+RUN pip install --no-cache-dir /tmp/mlx-container-client/ && \
+    rm -rf /tmp/mlx-container-client/
+
+# Set environment variables for vsock connection
+ENV MLX_VSOCK_CID=2
+ENV MLX_VSOCK_PORT=2048
+
+WORKDIR /app
