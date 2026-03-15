@@ -28,7 +28,6 @@ struct CDICommand: AsyncParsableCommand {
 
         private static let defaultCDIPath = "~/.config/cdi/apple.com-gpu.yaml"
         private static let vsockCID: UInt32 = 2
-        private static let vsockPort: UInt32 = 2048
         private static let hookBinaryPath = "/usr/local/bin/mlx-cdi-hook"
 
         func run() async throws {
@@ -40,6 +39,10 @@ struct CDICommand: AsyncParsableCommand {
                 print("Error: No Apple GPU found. Apple Silicon required.")
                 throw ExitCode.failure
             }
+
+            // Read vsock port from user config (respects mlx-ctk config set --vsock-port)
+            let toolkitConfig = (try? ToolkitConfiguration.load()) ?? ToolkitConfiguration()
+            let vsockPort = toolkitConfig.vsockPort
 
             let outputPath: String
             if let custom = output {
@@ -63,7 +66,7 @@ struct CDICommand: AsyncParsableCommand {
             let spec = CDISpec(
                 gpu: gpu,
                 vsockCID: Self.vsockCID,
-                vsockPort: Self.vsockPort,
+                vsockPort: vsockPort,
                 hookPath: Self.hookBinaryPath
             )
 
@@ -79,7 +82,7 @@ struct CDICommand: AsyncParsableCommand {
             logger.info("CDI spec written to \(resolvedPath)")
             print("CDI spec generated: \(resolvedPath)")
             print("Device: \(gpu.name) (\(gpu.gpuFamily))")
-            print("vsock CID:\(Self.vsockCID) port:\(Self.vsockPort)")
+            print("vsock CID:\(Self.vsockCID) port:\(vsockPort)")
         }
     }
 

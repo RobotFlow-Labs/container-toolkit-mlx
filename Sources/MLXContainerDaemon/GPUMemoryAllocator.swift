@@ -18,7 +18,10 @@ public actor GPUMemoryAllocator {
 
     /// Request a memory allocation for a container.
     public func allocate(containerID: String, requestedBytes: UInt64) throws -> UInt64 {
-        let currentUsed = allocations.values.reduce(0, +)
+        // Subtract existing allocation for this container so re-allocation
+        // doesn't double-count against the budget.
+        let existingBytes = allocations[containerID] ?? 0
+        let currentUsed = allocations.values.reduce(0, +) - existingBytes
         let available = currentUsed < maxBudgetBytes ? maxBudgetBytes - currentUsed : 0
 
         let grantedBytes = min(requestedBytes, available)

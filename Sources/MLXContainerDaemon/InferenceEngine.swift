@@ -89,6 +89,7 @@ public actor InferenceEngine {
         let startTime = Date()
         var fullText = ""
         var chunkCount: Int32 = 0
+        var completeSent = false
 
         let stream = try await container.generate(
             input: input,
@@ -111,6 +112,7 @@ public actor InferenceEngine {
                     tokensPerSecond: genTime > 0 ? Double(chunkCount) / genTime : 0
                 )
                 try await onComplete(partialComplete)
+                completeSent = true
                 return
             }
 
@@ -131,10 +133,24 @@ public actor InferenceEngine {
                     tokensPerSecond: info.tokensPerSecond
                 )
                 try await onComplete(complete)
+                completeSent = true
 
             case .toolCall:
                 break
             }
+        }
+
+        // If the stream ended without emitting .info, synthesise a complete
+        // frame so the client always receives exactly one final message.
+        if !completeSent {
+            let genTime = Date().timeIntervalSince(startTime)
+            let fallback = MLXContainer_GenerateComplete(
+                fullText: fullText,
+                completionTokens: chunkCount,
+                generationTimeSeconds: genTime,
+                tokensPerSecond: genTime > 0 ? Double(chunkCount) / genTime : 0
+            )
+            try await onComplete(fallback)
         }
 
         logger.info("Generation complete: \(fullText.count) chars in \(String(format: "%.2f", Date().timeIntervalSince(startTime)))s")
