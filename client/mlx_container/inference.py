@@ -62,10 +62,16 @@ def generate_stream(
     """
     Stream tokens from the host GPU. Convenience wrapper for generate(stream=True).
 
+    Calls the client directly with stream=True and validates the return type
+    at runtime to catch any future interface drift early.
+
     Yields:
         Individual tokens as strings
+
+    Raises:
+        TypeError: If the client does not return an iterator when stream=True.
     """
-    result = generate(
+    result = get_client().generate(
         prompt=prompt,
         model=model,
         messages=messages,
@@ -74,5 +80,9 @@ def generate_stream(
         top_p=top_p,
         stream=True,
     )
-    # result is already an iterator when stream=True
+    if not hasattr(result, "__iter__") or not hasattr(result, "__next__"):
+        raise TypeError(
+            f"generate(stream=True) must return an iterator, got {type(result).__name__!r}. "
+            "The client interface may have changed."
+        )
     yield from result

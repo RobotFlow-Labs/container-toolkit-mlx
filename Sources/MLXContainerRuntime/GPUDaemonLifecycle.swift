@@ -79,8 +79,13 @@ public actor GPUDaemonLifecycle {
             }
         }
 
-        process.standardOutput = try FileHandle(forWritingTo: stdoutLog)
-        process.standardError = try FileHandle(forWritingTo: stderrLog)
+        let stdoutHandle = try FileHandle(forWritingTo: stdoutLog)
+        stdoutHandle.seekToEndOfFile()
+        let stderrHandle = try FileHandle(forWritingTo: stderrLog)
+        stderrHandle.seekToEndOfFile()
+
+        process.standardOutput = stdoutHandle
+        process.standardError = stderrHandle
 
         try process.run()
         daemonProcess = process

@@ -88,7 +88,7 @@ struct MLXContainerServiceImpl: MLXContainerServiceProtocol {
         let startTime = Date()
 
         do {
-            try await server.modelManager.loadModel(id: request.modelID)
+            try await server.modelManager.loadModel(id: request.modelID, alias: request.alias)
             response.success = true
             response.modelID = request.modelID
             response.loadTimeSeconds = Date().timeIntervalSince(startTime)
@@ -115,6 +115,7 @@ struct MLXContainerServiceImpl: MLXContainerServiceProtocol {
         } catch {
             response.success = false
             response.error = error.localizedDescription
+            server.logger.error("Failed to unload model: \(error)")
         }
 
         return response
@@ -129,6 +130,8 @@ struct MLXContainerServiceImpl: MLXContainerServiceProtocol {
         response.models = models.map { model in
             MLXContainer_ModelInfo(
                 modelID: model.id,
+                alias: model.alias,
+                memoryUsedBytes: model.memoryUsedBytes,
                 isLoaded: model.isLoaded,
                 modelType: model.modelType
             )
@@ -168,14 +171,19 @@ struct MLXContainerServiceImpl: MLXContainerServiceProtocol {
     ) async throws -> MLXContainer_GetGPUStatusResponse {
         let models = await server.modelManager.listModels()
 
+        let memSnapshot = await server.gpuMemoryAllocator.snapshot()
         return MLXContainer_GetGPUStatusResponse(
             deviceName: server.gpu.name,
             totalMemoryBytes: server.gpu.unifiedMemoryBytes,
+            usedMemoryBytes: memSnapshot.allocatedBytes,
+            availableMemoryBytes: memSnapshot.availableBytes,
             gpuFamily: server.gpu.gpuFamily,
             loadedModelsCount: Int32(models.filter(\.isLoaded).count),
             loadedModels: models.map { m in
                 MLXContainer_ModelInfo(
                     modelID: m.id,
+                    alias: m.alias,
+                    memoryUsedBytes: m.memoryUsedBytes,
                     isLoaded: m.isLoaded,
                     modelType: m.modelType
                 )

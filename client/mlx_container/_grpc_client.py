@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import os
 import socket
+import threading
 from typing import Iterator, Optional
 
 import grpc
@@ -48,19 +49,30 @@ def _make_vsock_channel(cid: int, port: int) -> grpc.Channel:
     listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     listener.bind(("127.0.0.1", 0))
     tcp_port = listener.getsockname()[1]
-    listener.listen(1)
+    listener.listen(5)
 
-    import threading
+    # Synchronisation: the proxy thread signals whether the first vsock
+    # connect succeeded so the calling thread can fail fast instead of
+    # returning a channel that will never work.
+    _ready = threading.Event()
+    _error: list[Exception] = []  # at most one element; list is thread-safe for append
 
-    def _proxy() -> None:
-        """Accept exactly one TCP connection and bridge it to vsock."""
-        AF_VSOCK: int = 40  # Linux constant
+    def _forward(src: socket.socket, dst: socket.socket) -> None:
         try:
-            tcp_conn, _ = listener.accept()
-            listener.close()
+            while True:
+                chunk = src.recv(65536)
+                if not chunk:
+                    break
+                dst.sendall(chunk)
         except OSError:
-            return
+            pass
+        finally:
+            src.close()
+            dst.close()
 
+    def _bridge(tcp_conn: socket.socket) -> None:
+        """Connect one accepted TCP socket to vsock and start forwarding."""
+        AF_VSOCK: int = 40  # Linux AF_VSOCK constant
         try:
             vs_sock = socket.socket(AF_VSOCK, socket.SOCK_STREAM)
             vs_sock.connect((cid, port))
@@ -69,24 +81,48 @@ def _make_vsock_channel(cid: int, port: int) -> grpc.Channel:
             raise ConnectionError(
                 f"vsock connect failed (CID={cid}, port={port}): {exc}"
             ) from exc
-
-        def _forward(src: socket.socket, dst: socket.socket) -> None:
-            try:
-                while True:
-                    chunk = src.recv(65536)
-                    if not chunk:
-                        break
-                    dst.sendall(chunk)
-            except OSError:
-                pass
-            finally:
-                src.close()
-                dst.close()
-
         threading.Thread(target=_forward, args=(tcp_conn, vs_sock), daemon=True).start()
         threading.Thread(target=_forward, args=(vs_sock, tcp_conn), daemon=True).start()
 
+    def _proxy() -> None:
+        """
+        Accept TCP connections from gRPC and bridge each one to vsock.
+
+        The listener stays open so that gRPC reconnect attempts (after a
+        transient failure or idle-timeout) are handled correctly.  A
+        threading.Event is used to surface the result of the *first* vsock
+        connect attempt back to the calling thread.
+        """
+        first = True
+        while True:
+            try:
+                tcp_conn, _ = listener.accept()
+            except OSError:
+                # Listener was closed (e.g. client called close()), exit loop.
+                return
+            try:
+                _bridge(tcp_conn)
+                if first:
+                    first = False
+                    _ready.set()
+            except ConnectionError as exc:
+                if first:
+                    first = False
+                    _error.append(exc)
+                    _ready.set()
+                # For subsequent reconnects, the gRPC layer will surface the
+                # failure through its own retry/backoff machinery.
+
     threading.Thread(target=_proxy, daemon=True).start()
+
+    # Block until the first vsock connection attempt completes (or times out).
+    # A 5-second timeout is generous for a loopback + vsock connect; if it
+    # expires we let gRPC proceed and surface errors through normal RPC status.
+    _ready.wait(timeout=5.0)
+    if _error:
+        listener.close()
+        raise _error[0]
+
     return grpc.insecure_channel(f"127.0.0.1:{tcp_port}")
 
 

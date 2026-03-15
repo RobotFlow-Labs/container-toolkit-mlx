@@ -28,6 +28,20 @@ except ImportError:
     sys.exit(1)
 
 
+MAX_TOKENS_CAP = 4096  # Hard cap on max_tokens per request
+MODEL_ID_PATTERN = r'^[a-zA-Z0-9_-]+/[a-zA-Z0-9._-]+$'
+
+
+def _validate_model_id(model_id: str) -> str:
+    """Validate model ID format to prevent path traversal."""
+    import re
+    if not model_id or not re.match(MODEL_ID_PATTERN, model_id):
+        raise ValueError(f"Invalid model ID format: {model_id!r}. Expected 'owner/model-name'.")
+    if '..' in model_id:
+        raise ValueError(f"Model ID must not contain '..': {model_id!r}")
+    return model_id
+
+
 class ModelManager:
     """Simple model manager for development."""
 
@@ -36,6 +50,7 @@ class ModelManager:
         self.start_time = time.time()
 
     def load_model(self, model_id: str) -> dict:
+        model_id = _validate_model_id(model_id)
         if model_id in self.models:
             return {"success": True, "modelID": model_id, "loadTimeSeconds": 0}
 
@@ -68,6 +83,7 @@ class ModelManager:
 
     def generate(self, model_id: str, prompt: str, max_tokens: int = 256,
                  temperature: float = 0.7) -> dict:
+        max_tokens = min(max_tokens, MAX_TOKENS_CAP)
         if model_id not in self.models:
             raise ValueError(f"Model not loaded: {model_id}")
 
@@ -116,9 +132,15 @@ class ModelManager:
 manager = ModelManager()
 
 
+MAX_REQUEST_BYTES = 1024 * 1024  # 1 MB max request body
+
+
 class DaemonHandler(BaseHTTPRequestHandler):
     def do_POST(self):
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_REQUEST_BYTES:
+            self.send_error(413, "Request body too large")
+            return
         body = json.loads(self.rfile.read(content_length)) if content_length > 0 else {}
 
         try:

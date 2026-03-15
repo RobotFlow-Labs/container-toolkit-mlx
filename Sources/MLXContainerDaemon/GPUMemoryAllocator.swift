@@ -19,7 +19,7 @@ public actor GPUMemoryAllocator {
     /// Request a memory allocation for a container.
     public func allocate(containerID: String, requestedBytes: UInt64) throws -> UInt64 {
         let currentUsed = allocations.values.reduce(0, +)
-        let available = maxBudgetBytes - currentUsed
+        let available = currentUsed < maxBudgetBytes ? maxBudgetBytes - currentUsed : 0
 
         let grantedBytes = min(requestedBytes, available)
         guard grantedBytes > 0 else {
@@ -29,7 +29,7 @@ public actor GPUMemoryAllocator {
             )
         }
 
-        allocations[containerID] = (allocations[containerID] ?? 0) + grantedBytes
+        allocations[containerID] = grantedBytes
         logger.info("GPU memory allocated: \(grantedBytes / (1024*1024)) MB for container \(containerID)")
         return grantedBytes
     }
@@ -49,7 +49,7 @@ public actor GPUMemoryAllocator {
             totalBytes: totalMemoryBytes,
             budgetBytes: maxBudgetBytes,
             allocatedBytes: allocated,
-            availableBytes: maxBudgetBytes - allocated,
+            availableBytes: allocated < maxBudgetBytes ? maxBudgetBytes - allocated : 0,
             containerAllocations: allocations
         )
     }

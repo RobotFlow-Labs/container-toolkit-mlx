@@ -68,6 +68,7 @@ public actor InferenceEngine {
         // Generate with streaming
         let startTime = Date()
         var fullText = ""
+        var chunkCount: Int32 = 0
 
         let stream = try await container.generate(
             input: input,
@@ -78,12 +79,15 @@ public actor InferenceEngine {
             switch item {
             case .chunk(let text):
                 fullText += text
+                chunkCount += 1
                 try await onToken(text)
 
             case .info(let info):
                 let genTime = Date().timeIntervalSince(startTime)
                 let complete = MLXContainer_GenerateComplete(
                     fullText: fullText,
+                    promptTokens: Int32(info.promptTokenCount),
+                    completionTokens: Int32(info.generationTokenCount > 0 ? info.generationTokenCount : Int(chunkCount)),
                     promptTimeSeconds: info.promptTime,
                     generationTimeSeconds: genTime,
                     tokensPerSecond: info.tokensPerSecond
